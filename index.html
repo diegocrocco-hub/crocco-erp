@@ -118,6 +118,7 @@ tbody tr:hover { background: #fafbfc; }
 .chip-pending, .chip-approved { background: #fff4e0; color: #a6650a; }
 .chip-auto_ask { background: #e6f0ff; color: #1a56cc; }
 .chip-ignored { background: #f0f0f2; color: var(--sub); }
+.chip-sin_stock { background: #f3e8ff; color: #7c3aed; }
 .section { margin-bottom: 28px; }
 .section h2 { font-size: 1.05rem; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
 .badge-count { font-size: 0.7rem; background: var(--danger); color: #fff; border-radius: 980px; padding: 2px 9px; font-weight: 700; }
@@ -225,6 +226,7 @@ tbody tr:hover { background: #fafbfc; }
           <button data-f="approved" class="tab-btn">Aprobadas</button>
           <button data-f="auto_ask" class="tab-btn">Se pidió dato</button>
           <button data-f="ignored" class="tab-btn">Sin identificar</button>
+          <button data-f="sin_stock" class="tab-btn">Sin stock (pausadas)</button>
         </div>
         <div class="table-shell">
           <table>
@@ -747,7 +749,7 @@ async function handleImport(event) {
 
 /* ========== PREGUNTAS ML ========== */
 let historyData = [], currentPFilter = 'all';
-const statusLabels = { auto: 'Auto-respondida', approved: 'Aprobada', pending: 'Pendiente', auto_ask: 'Se pidió dato', ignored: 'Sin identificar' };
+const statusLabels = { auto: 'Auto-respondida', approved: 'Aprobada', pending: 'Pendiente', auto_ask: 'Se pidió dato', ignored: 'Sin identificar', sin_stock: 'Sin stock (pausada)' };
 function fmtDate(ts) { return new Date(ts).toLocaleString('es-MX', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); }
 
 function renderPStats() {
