@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Back Office — Crocco Brands</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #f5f5f7; --panel: #ffffff; --ink: #1d1d1f; --sub: #6e6e73;
+  --line: #e5e5e7; --accent: #0071e3; --danger: #ff3b30; --ok: #1a7f3c; --warn: #ff9500;
+  --radius: 12px; --sidebar-w: 220px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg); color: var(--ink);
+}
+a { text-decoration: none; color: inherit; }
+
+/* ===== LOGIN ===== */
+#loginScreen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.login-card {
+  background: #fff; border-radius: 20px; padding: 40px 36px; width: 100%; max-width: 380px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+.login-card h1 { font-size: 1.3rem; margin: 0 0 4px; text-align: center; }
+.login-card .tagline { color: var(--sub); font-size: 0.85rem; text-align: center; margin-bottom: 24px; }
+.login-card input {
+  width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line);
+  font-size: 0.9rem; margin-bottom: 12px; font-family: inherit;
+}
+.login-card button {
+  width: 100%; padding: 12px; border-radius: 980px; border: none; background: var(--accent);
+  color: #fff; font-weight: 600; font-size: 0.95rem; cursor: pointer; margin-top: 4px;
+}
+.login-card button:disabled { opacity: 0.6; }
+.login-toggle { text-align: center; margin-top: 16px; font-size: 0.83rem; color: var(--sub); }
+.login-toggle a { color: var(--accent); font-weight: 600; }
+.login-error { background: #fff0ef; color: var(--danger); padding: 9px 12px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 12px; display: none; }
+.login-error.show { display: block; }
+
+/* ===== APP SHELL ===== */
+#appShell { display: none; min-height: 100vh; }
+#appShell.show { display: flex; }
+
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0; background: #1d1d1f; color: #fff;
+  min-height: 100vh; padding: 20px 0; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.sidebar .brand { padding: 0 20px 20px; font-weight: 700; font-size: 1.05rem; border-bottom: 1px solid #333; margin-bottom: 12px; }
+.sidebar .nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 11px 20px; font-size: 0.88rem;
+  color: #d1d1d6; cursor: pointer; transition: background .15s;
+}
+.sidebar .nav-item:hover { background: #2c2c2e; color: #fff; }
+.sidebar .nav-item.active { background: var(--accent); color: #fff; }
+.sidebar .nav-section-label { padding: 16px 20px 6px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: #86868b; }
+.sidebar .user-box { margin-top: auto; padding: 16px 20px; border-top: 1px solid #333; font-size: 0.78rem; color: #86868b; }
+.sidebar .user-box .email { color: #fff; font-weight: 600; display: block; margin-bottom: 6px; word-break: break-all; }
+.sidebar .logout-btn { background: none; border: 1px solid #444; color: #d1d1d6; padding: 6px 12px; border-radius: 8px; font-size: 0.78rem; cursor: pointer; }
+
+.main { flex: 1; min-width: 0; }
+.view { display: none; padding: 28px 28px 80px; max-width: 1400px; margin: 0 auto; }
+.view.active { display: block; }
+
+.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+.top h1 { font-size: 1.4rem; font-weight: 700; margin: 0; }
+.top .sub { color: var(--sub); font-size: 0.85rem; margin-top: 2px; }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.stat { background: var(--panel); border-radius: var(--radius); padding: 10px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); text-align: center; min-width: 90px; }
+.stat .n { font-size: 1.2rem; font-weight: 700; }
+.stat .l { font-size: 0.7rem; color: var(--sub); text-transform: uppercase; }
+
+.toolbar {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  background: var(--panel); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.toolbar input[type="text"], .toolbar select {
+  padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line);
+  font-size: 0.88rem; font-family: inherit; background: #fff; color: var(--ink);
+}
+.toolbar input[type="text"] { flex: 1 1 220px; min-width: 180px; }
+.btn {
+  padding: 9px 16px; border-radius: 980px; border: none; font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; font-family: inherit; white-space: nowrap; transition: opacity .15s;
+}
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-secondary { background: #f0f0f2; color: var(--ink); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-ok { background: var(--ok); color: #fff; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+input[type="file"] { display: none; }
+
+.bulk-bar {
+  display: none; align-items: center; gap: 10px; background: #1d1d1f; color: #fff;
+  border-radius: var(--radius); padding: 10px 16px; margin-bottom: 14px; font-size: 0.85rem;
+}
+.bulk-bar.show { display: flex; }
+.bulk-bar .spacer { flex: 1; }
+
+.table-shell { background: var(--panel); border-radius: var(--radius); overflow: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+#invTableShell { max-height: 62vh; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+thead th {
+  position: sticky; top: 0; background: #fafafa; text-align: left; padding: 10px 12px;
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--sub);
+  border-bottom: 1px solid var(--line); z-index: 1;
+}
+tbody td { padding: 8px 12px; border-bottom: 1px solid #f0f0f2; vertical-align: middle; }
+tbody tr:hover { background: #fafbfc; }
+.badge { display: inline-block; padding: 2px 9px; border-radius: 980px; font-size: 0.72rem; font-weight: 600; background: #eef2ff; color: #3a4fcc; }
+.num-input { width: 84px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 0.82rem; font-family: inherit; }
+.row-del { background: none; border: none; color: var(--sub); cursor: pointer; font-size: 1rem; padding: 4px; }
+.row-del:hover { color: var(--danger); }
+.empty { text-align: center; padding: 40px; color: var(--sub); }
+.footer-note { font-size: 0.78rem; color: var(--sub); margin-top: 10px; }
+
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 50; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: #fff; border-radius: 16px; padding: 26px; width: 90%; max-width: 420px; }
+.modal h3 { margin: 0 0 8px; font-size: 1.1rem; }
+.modal p { color: var(--sub); font-size: 0.88rem; margin-bottom: 18px; }
+.modal input, .modal select { width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); margin-bottom: 10px; font-family: inherit; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: #1d1d1f; color: #fff; padding: 12px 20px; border-radius: 980px; font-size: 0.85rem;
+  opacity: 0; transition: all .25s; z-index: 100; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Preguntas ML */
+.pending-card { background: var(--panel); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 12px; border-left: 4px solid var(--warn); box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.pending-card.claude { border-left-color: #5856d6; }
+.pending-card .vehicle { font-weight: 700; margin-bottom: 4px; font-size: 0.95rem; }
+.pending-card .question { color: var(--sub); font-size: 0.85rem; margin-bottom: 10px; }
+.pending-card .answer-box { background: #f5f5f7; border-radius: 8px; padding: 10px 12px; font-size: 0.83rem; white-space: pre-wrap; margin-bottom: 10px; width: 100%; border: 1px solid var(--line); font-family: inherit; resize: vertical; min-height: 70px; }
+.pending-card .meta { font-size: 0.72rem; color: #a1a1a6; margin-bottom: 10px; }
+.pending-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-block; padding: 2px 10px; border-radius: 980px; font-size: 0.7rem; font-weight: 600; }
+.chip-auto { background: #e3f8e9; color: var(--ok); }
+.chip-pending, .chip-approved { background: #fff4e0; color: #a6650a; }
+.chip-auto_ask { background: #e6f0ff; color: #1a56cc; }
+.chip-ignored { background: #f0f0f2; color: var(--sub); }
+.section { margin-bottom: 28px; }
+.section h2 { font-size: 1.05rem; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.badge-count { font-size: 0.7rem; background: var(--danger); color: #fff; border-radius: 980px; padding: 2px 9px; font-weight: 700; }
+
+/* Colaboradores */
+.role-chip { padding: 2px 10px; border-radius: 980px; font-size: 0.72rem; font-weight: 600; }
+.role-admin { background: #ffe8e6; color: #b3261e; }
+.role-colaborador { background: #e6f0ff; color: #1a56cc; }
+
+@media (max-width: 780px) {
+  .sidebar { position: fixed; z-index: 40; transform: translateX(-100%); transition: transform .2s; }
+  .sidebar.open { transform: translateX(0); }
+  .main { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN / SIGNUP ============ -->
+<div id="loginScreen">
+  <div class="login-card">
+    <h1>Crocco Brands</h1>
+    <div class="tagline">Back office interno</div>
+    <div class="login-error" id="loginError"></div>
+    <input type="email" id="loginEmail" placeholder="Correo">
+    <input type="password" id="loginPassword" placeholder="Contraseña">
+    <input type="text" id="loginName" placeholder="Tu nombre" style="display:none;">
+    <button id="loginBtn" onclick="handleLogin()">Iniciar sesión</button>
+    <div class="login-toggle" id="loginToggleText">
+      ¿Primera vez aquí? <a onclick="toggleMode()">Crear cuenta de administrador</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="appShell">
+  <div class="sidebar" id="sidebar">
+    <div class="brand">🐊 Crocco Brands</div>
+    <div class="nav-section-label">Operación</div>
+    <div class="nav-item active" data-view="inventario" onclick="switchView('inventario')">📦 Inventario</div>
+    <div class="nav-item" data-view="preguntas" onclick="switchView('preguntas')">🔦 Preguntas ML</div>
+    <div class="nav-item" data-view="pedidos" onclick="switchView('pedidos')">🛒 Pedidos</div>
+    <div class="nav-item" data-view="restock" onclick="switchView('restock')">🔁 Restock marcas</div>
+    <div class="nav-section-label" id="adminSectionLabel" style="display:none;">Administración</div>
+    <div class="nav-item" data-view="colaboradores" id="navColaboradores" style="display:none;" onclick="switchView('colaboradores')">👥 Colaboradores</div>
+    <div class="user-box">
+      <span class="email" id="userEmailLabel"></span>
+      <span id="userRoleLabel"></span>
+      <div style="margin-top:10px;"><button class="logout-btn" onclick="handleLogout()">Cerrar sesión</button></div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- ===== VISTA: INVENTARIO ===== -->
+    <div class="view active" id="view-inventario">
+      <div class="top">
+        <div><h1>📦 Inventario</h1><div class="sub">Marcas, productos, costos y precios</div></div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-secondary" onclick="exportExcel()">⬇️ Descargar Excel</button>
+          <label class="btn btn-primary" for="importFile" style="cursor:pointer;">⬆️ Subir Excel</label>
+          <input type="file" id="importFile" accept=".xlsx,.xls" onchange="handleImport(event)">
+        </div>
+      </div>
+      <div class="stats" id="invStats"></div>
+      <div class="toolbar">
+        <input type="text" id="searchBox" placeholder="Buscar por SKU, producto o variante…" oninput="applyFilters()">
+        <select id="brandFilter" onchange="applyFilters()"><option value="">Todas las marcas</option></select>
+        <button class="btn btn-secondary" onclick="openAddModal()">+ Agregar producto</button>
+      </div>
+      <div class="bulk-bar" id="bulkBar">
+        <span><b id="selCount">0</b> seleccionados</span>
+        <div class="spacer"></div>
+        <button class="btn btn-danger" onclick="confirmBulkDelete()">🗑️ Eliminar seleccionados</button>
+        <button class="btn btn-secondary" onclick="clearSelection()">Cancelar</button>
+      </div>
+      <div class="table-shell" id="invTableShell">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+              <th>Marca</th><th>SKU</th><th>Producto</th><th>Variante</th><th>Stock</th><th>Costo s/IVA</th><th>Precio c/IVA</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="empty" id="emptyMsg" style="display:none;">No se encontraron productos con ese filtro.</div>
+      </div>
+      <p class="footer-note">Los cambios de stock/costo/precio se guardan automáticamente al salir del campo. Máximo 500 filas visibles a la vez — usa el buscador para encontrar productos específicos.</p>
+    </div>
+
+    <!-- ===== VISTA: PREGUNTAS ML ===== -->
+    <div class="view" id="view-preguntas">
+      <div class="top">
+        <div><h1>🔦 Preguntas ML</h1><div class="sub"><span class="live-dot"></span>Se actualiza cada 15 segundos</div></div>
+      </div>
+      <div class="stats" id="pStats"></div>
+      <div class="section">
+        <h2>Pendientes de aprobación <span class="badge-count" id="pendingBadge">0</span></h2>
+        <div id="pendingList"></div>
+      </div>
+      <div class="section">
+        <h2>Historial</h2>
+        <div class="toolbar" id="pFilters">
+          <button data-f="all" class="active">Todas</button>
+          <button data-f="auto">Auto-respondidas</button>
+          <button data-f="approved">Aprobadas</button>
+          <button data-f="auto_ask">Se pidió dato</button>
+          <button data-f="ignored">Sin identificar</button>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>Fecha</th><th>Vehículo</th><th>Pregunta</th><th>Estado</th><th>Fuente</th><th>Publicación</th></tr></thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+          <div class="empty" id="historyEmpty" style="display:none;">Sin registros aún.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== VISTA: PEDIDOS (placeholder) ===== -->
+    <div class="view" id="view-pedidos">
+      <div class="top"><div><h1>🛒 Pedidos</h1><div class="sub">Próximamente</div></div></div>
+      <div class="empty" style="background:#fff; border-radius:12px;">Aquí vivirá el seguimiento de pedidos de Mercado Libre, Amazon, Liverpool, etc. — lo construimos en el siguiente paso.</div>
+    </div>
+
+    <!-- ===== VISTA: RESTOCK (placeholder) ===== -->
+    <div class="view" id="view-restock">
+      <div class="top"><div><h1>🔁 Restock marcas</h1><div class="sub">Próximamente</div></div></div>
+      <div class="empty" style="background:#fff; border-radius:12px;">Aquí vivirá la automatización de pedidos de reabastecimiento a EVOLUM, ILLUME, PREMIER NUTS, VITTETI y KONG — lo construimos en el siguiente paso.</div>
+    </div>
+
+    <!-- ===== VISTA: COLABORADORES (solo admin) ===== -->
+    <div class="view" id="view-colaboradores">
+      <div class="top">
+        <div><h1>👥 Colaboradores</h1><div class="sub">Da de alta a las personas que tendrán acceso al back office</div></div>
+        <button class="btn btn-primary" onclick="openInviteModal()">+ Invitar colaborador</button>
+      </div>
+      <div class="table-shell">
+        <table>
+          <thead><tr><th>Correo</th><th>Nombre</th><th>Rol</th><th>Alta</th></tr></thead>
+          <tbody id="collabBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== MODALES ===== -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>¿Eliminar productos?</h3>
+    <p id="deleteModalText">Esta acción no se puede deshacer.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancelar</button>
+      <button class="btn btn-danger" onclick="executeBulkDelete()">Sí, eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <h3>Agregar producto</h3>
+    <select id="newMarca"></select>
+    <input type="text" id="newSku" placeholder="SKU (ej. CQO-0101)">
+    <input type="text" id="newProducto" placeholder="Nombre del producto">
+    <input type="text" id="newVariante" placeholder="Variante (deja vacío si no aplica)">
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeAddModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="addProduct()">Agregar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="inviteModal">
+  <div class="modal">
+    <h3>Invitar colaborador</h3>
+    <p>Le llegará un correo para que configure su propia contraseña.</p>
+    <input type="text" id="inviteName" placeholder="Nombre">
+    <input type="email" id="inviteEmail" placeholder="Correo">
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeInviteModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="sendInvite()">Enviar invitación</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = 'https://jpscjdumeuabnmwrsvki.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impwc2NqZHVtZXVhYm5td3JzdmtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzODY3OTcsImV4cCI6MjA4OTk2Mjc5N30.TNv1twrLXX-GNBvFzwOLq9F6wmZo0X0KQhkyoC74VJg';
+const BOT_URL = 'https://worker-production-4fe8.up.railway.app';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentProfile = null;
+let isSignupMode = false;
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+function esc(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ========== AUTH ========== */
+function toggleMode() {
+  isSignupMode = !isSignupMode;
+  document.getElementById('loginName').style.display = isSignupMode ? 'block' : 'none';
+  document.getElementById('loginBtn').textContent = isSignupMode ? 'Crear cuenta' : 'Iniciar sesión';
+  document.getElementById('loginToggleText').innerHTML = isSignupMode
+    ? '¿Ya tienes cuenta? <a onclick="toggleMode()">Inicia sesión</a>'
+    : '¿Primera vez aquí? <a onclick="toggleMode()">Crear cuenta de administrador</a>';
+}
+
+async function handleLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errBox = document.getElementById('loginError');
+  errBox.classList.remove('show');
+
+  if (!email || !password) { errBox.textContent = 'Completa correo y contraseña'; errBox.classList.add('show'); return; }
+
+  if (isSignupMode) {
+    const { error } = await sb.auth.signUp({ email, password, options: { data: { full_name: document.getElementById('loginName').value.trim() } } });
+    if (error) { errBox.textContent = error.message; errBox.classList.add('show'); return; }
+    showToast('Cuenta creada, iniciando sesión…');
+  }
+
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { errBox.textContent = 'Correo o contraseña incorrectos'; errBox.classList.add('show'); return; }
+  await onAuthed();
+}
+
+async function handleLogout() {
+  await sb.auth.signOut();
+  location.reload();
+}
+
+async function onAuthed() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+
+  const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  currentProfile = profile;
+
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appShell').classList.add('show');
+  document.getElementById('userEmailLabel').textContent = user.email;
+  document.getElementById('userRoleLabel').innerHTML = `<span class="role-chip role-${profile?.role || 'colaborador'}">${profile?.role === 'admin' ? 'Administrador' : 'Colaborador'}</span>`;
+
+  if (profile?.role === 'admin') {
+    document.getElementById('adminSectionLabel').style.display = 'block';
+    document.getElementById('navColaboradores').style.display = 'flex';
+    loadCollaborators();
+  }
+
+  loadInventoryData();
+  refreshPreguntas();
+  setInterval(refreshPreguntas, 15000);
+}
+
+/* ========== NAV ========== */
+function switchView(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(`view-${view}`).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelector(`.nav-item[data-view="${view}"]`).classList.add('active');
+}
+
+/* ========== COLABORADORES ========== */
+async function loadCollaborators() {
+  const { data, error } = await sb.from('profiles').select('*').order('created_at');
+  if (error) return;
+  document.getElementById('collabBody').innerHTML = data.map(p => `
+    <tr>
+      <td>${esc(p.email)}</td>
+      <td>${esc(p.full_name) || '—'}</td>
+      <td><span class="role-chip role-${p.role}">${p.role === 'admin' ? 'Administrador' : 'Colaborador'}</span></td>
+      <td>${new Date(p.created_at).toLocaleDateString('es-MX')}</td>
+    </tr>
+  `).join('');
+}
+
+function openInviteModal() { document.getElementById('inviteModal').classList.add('show'); }
+function closeInviteModal() {
+  document.getElementById('inviteModal').classList.remove('show');
+  document.getElementById('inviteName').value = '';
+  document.getElementById('inviteEmail').value = '';
+}
+
+async function sendInvite() {
+  const email = document.getElementById('inviteEmail').value.trim();
+  const full_name = document.getElementById('inviteName').value.trim();
+  if (!email) { showToast('Falta el correo'); return; }
+
+  const { data: { session } } = await sb.auth.getSession();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/invite-collaborator`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ email, full_name })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast('Error: ' + (data.error || 'no se pudo invitar')); return; }
+    showToast(`Invitación enviada a ${email} ✓`);
+    closeInviteModal();
+    loadCollaborators();
+  } catch (e) {
+    showToast('Error de red al invitar');
+  }
+}
+
+/* ========== INVENTARIO ========== */
+let allRows = [], filteredRows = [], selected = new Set(), brands = [];
+
+async function loadInventoryData() {
+  const { data: cat, error: e1 } = await sb.from('catalog').select('sku, marca, producto, variante, costo_sin_iva, costo_con_iva, precio_venta').order('marca').order('sku');
+  const { data: inv, error: e2 } = await sb.from('inventory').select('sku, qty');
+  const { data: mar, error: e3 } = await sb.from('marcas').select('nombre').order('nombre');
+  if (e1 || e2 || e3) { showToast('Error cargando inventario'); return; }
+
+  const invMap = {}; (inv || []).forEach(i => invMap[i.sku] = i.qty);
+  allRows = (cat || []).map(r => ({ sku: r.sku, marca: r.marca, producto: r.producto, variante: r.variante, stock: invMap[r.sku] ?? 0, costo_sin_iva: r.costo_sin_iva, precio_venta: r.precio_venta }));
+  brands = (mar || []).map(m => m.nombre);
+
+  document.getElementById('brandFilter').innerHTML = '<option value="">Todas las marcas</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join('');
+  document.getElementById('newMarca').innerHTML = brands.map(b => `<option value="${b}">${b}</option>`).join('');
+
+  renderInvStats(); applyFilters();
+}
+
+function renderInvStats() {
+  const total = allRows.length;
+  const sinStock = allRows.filter(r => !r.stock).length;
+  const sinPrecio = allRows.filter(r => r.precio_venta == null).length;
+  document.getElementById('invStats').innerHTML = `
+    <div class="stat"><div class="n">${total}</div><div class="l">Productos</div></div>
+    <div class="stat"><div class="n">${brands.length}</div><div class="l">Marcas</div></div>
+    <div class="stat"><div class="n">${sinStock}</div><div class="l">Sin stock</div></div>
+    <div class="stat"><div class="n">${sinPrecio}</div><div class="l">Sin precio</div></div>`;
+}
+
+function applyFilters() {
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  const marca = document.getElementById('brandFilter').value;
+  filteredRows = allRows.filter(r => {
+    if (marca && r.marca !== marca) return false;
+    if (q) { const hay = (r.sku + ' ' + r.producto + ' ' + (r.variante || '')).toLowerCase(); if (!hay.includes(q)) return false; }
+    return true;
+  });
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tbody');
+  const rows = filteredRows.slice(0, 500);
+  if (rows.length === 0) { tbody.innerHTML = ''; document.getElementById('emptyMsg').style.display = 'block'; return; }
+  document.getElementById('emptyMsg').style.display = 'none';
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td><input type="checkbox" ${selected.has(r.sku) ? 'checked' : ''} onchange="toggleRow('${esc(r.sku)}', this.checked)"></td>
+      <td><span class="badge">${esc(r.marca)}</span></td>
+      <td><code>${esc(r.sku)}</code></td>
+      <td>${esc(r.producto)}</td>
+      <td>${esc(r.variante || 'N/A')}</td>
+      <td><input type="number" class="num-input" value="${r.stock ?? 0}" min="0" onchange="updateField('${esc(r.sku)}','stock',this.value)"></td>
+      <td><input type="number" class="num-input" value="${r.costo_sin_iva ?? ''}" step="0.01" placeholder="—" onchange="updateField('${esc(r.sku)}','costo_sin_iva',this.value)"></td>
+      <td><input type="number" class="num-input" value="${r.precio_venta ?? ''}" step="0.01" placeholder="—" onchange="updateField('${esc(r.sku)}','precio_venta',this.value)"></td>
+      <td><button class="row-del" onclick="confirmSingleDelete('${esc(r.sku)}')">✕</button></td>
+    </tr>`).join('');
+  updateBulkBar();
+}
+
+async function updateField(sku, field, value) {
+  const row = allRows.find(r => r.sku === sku); if (!row) return;
+  if (field === 'stock') {
+    const qty = parseInt(value) || 0; row.stock = qty;
+    const { error } = await sb.from('inventory').update({ qty }).eq('sku', sku);
+    if (error) { showToast('Error guardando stock'); return; }
+  } else {
+    const num = value === '' ? null : parseFloat(value); row[field] = num;
+    const { error } = await sb.from('catalog').update({ [field]: num }).eq('sku', sku);
+    if (error) { showToast('Error guardando'); return; }
+  }
+  showToast('Guardado ✓'); renderInvStats();
+}
+
+function toggleRow(sku, checked) { if (checked) selected.add(sku); else selected.delete(sku); updateBulkBar(); }
+function toggleSelectAll() {
+  const checked = document.getElementById('selectAll').checked;
+  filteredRows.slice(0, 500).forEach(r => { if (checked) selected.add(r.sku); else selected.delete(r.sku); });
+  renderTable();
+}
+function clearSelection() { selected.clear(); renderTable(); }
+function updateBulkBar() { document.getElementById('selCount').textContent = selected.size; document.getElementById('bulkBar').classList.toggle('show', selected.size > 0); }
+
+let pendingDeleteSkus = [];
+function confirmSingleDelete(sku) { pendingDeleteSkus = [sku]; document.getElementById('deleteModalText').textContent = `Se eliminará el producto ${sku}.`; document.getElementById('deleteModal').classList.add('show'); }
+function confirmBulkDelete() { pendingDeleteSkus = Array.from(selected); document.getElementById('deleteModalText').textContent = `Se eliminarán ${pendingDeleteSkus.length} productos.`; document.getElementById('deleteModal').classList.add('show'); }
+function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('show'); pendingDeleteSkus = []; }
+
+async function executeBulkDelete() {
+  const skus = pendingDeleteSkus;
+  const { error } = await sb.from('catalog').delete().in('sku', skus);
+  closeDeleteModal();
+  if (error) { showToast('Error eliminando'); return; }
+  allRows = allRows.filter(r => !skus.includes(r.sku));
+  skus.forEach(s => selected.delete(s));
+  showToast(`${skus.length} producto(s) eliminado(s)`); renderInvStats(); applyFilters();
+}
+
+function openAddModal() { document.getElementById('addModal').classList.add('show'); }
+function closeAddModal() { document.getElementById('addModal').classList.remove('show'); document.getElementById('newSku').value=''; document.getElementById('newProducto').value=''; document.getElementById('newVariante').value=''; }
+
+async function addProduct() {
+  const marca = document.getElementById('newMarca').value;
+  const sku = document.getElementById('newSku').value.trim();
+  const producto = document.getElementById('newProducto').value.trim();
+  const variante = document.getElementById('newVariante').value.trim() || 'N/A';
+  if (!sku || !producto) { showToast('Falta SKU o nombre'); return; }
+  const { error: e1 } = await sb.from('catalog').insert({ sku, marca, producto, variante, estado: 'activo' });
+  if (e1) { showToast('Error: ' + e1.message); return; }
+  await sb.from('inventory').insert({ sku, qty: 0 });
+  allRows.push({ sku, marca, producto, variante, stock: 0, costo_sin_iva: null, precio_venta: null });
+  closeAddModal(); showToast('Producto agregado ✓'); renderInvStats(); applyFilters();
+}
+
+function exportExcel() {
+  const data = filteredRows.map(r => ({ Marca: r.marca, SKU: r.sku, Producto: r.producto, Variante: r.variante, Stock: r.stock, 'Costo sin IVA': r.costo_sin_iva, 'Precio Venta': r.precio_venta }));
+  const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+  XLSX.writeFile(wb, `inventario_crocco_${new Date().toISOString().slice(0,10)}.xlsx`);
+  showToast('Excel descargado');
+}
+
+async function handleImport(event) {
+  const file = event.target.files[0]; if (!file) return;
+  const buf = await file.arrayBuffer(); const wb = XLSX.read(buf, { type: 'array' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  if (!rows.length) { showToast('Archivo vacío'); event.target.value = ''; return; }
+  let updated = 0, errors = 0;
+  for (const row of rows) {
+    const sku = (row.SKU || row.sku || '').toString().trim(); if (!sku) continue;
+    const catUpdate = {};
+    if (row['Costo sin IVA'] !== undefined && row['Costo sin IVA'] !== '') catUpdate.costo_sin_iva = parseFloat(row['Costo sin IVA']);
+    if (row['Precio Venta'] !== undefined && row['Precio Venta'] !== '') catUpdate.precio_venta = parseFloat(row['Precio Venta']);
+    if (row['Producto']) catUpdate.producto = row['Producto'];
+    if (row['Variante']) catUpdate.variante = row['Variante'];
+    if (Object.keys(catUpdate).length > 0) { const { error } = await sb.from('catalog').update(catUpdate).eq('sku', sku); if (error) errors++; else updated++; }
+    if (row['Stock'] !== undefined && row['Stock'] !== '') { const qty = parseInt(row['Stock']) || 0; const { error } = await sb.from('inventory').update({ qty }).eq('sku', sku); if (error) errors++; }
+  }
+  showToast(`Importación lista: ${updated} actualizados${errors ? `, ${errors} errores` : ''}`);
+  event.target.value = ''; await loadInventoryData();
+}
+
+/* ========== PREGUNTAS ML ========== */
+let historyData = [], currentPFilter = 'all';
+const statusLabels = { auto: 'Auto-respondida', approved: 'Aprobada', pending: 'Pendiente', auto_ask: 'Se pidió dato', ignored: 'Sin identificar' };
+function fmtDate(ts) { return new Date(ts).toLocaleString('es-MX', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); }
+
+function renderPStats() {
+  const total = historyData.length;
+  const auto = historyData.filter(h => h.status === 'auto').length;
+  const approved = historyData.filter(h => h.status === 'approved').length;
+  const ignored = historyData.filter(h => h.status === 'ignored').length;
+  document.getElementById('pStats').innerHTML = `
+    <div class="stat"><div class="n">${total}</div><div class="l">Total</div></div>
+    <div class="stat"><div class="n">${auto}</div><div class="l">Auto</div></div>
+    <div class="stat"><div class="n">${approved}</div><div class="l">Aprobadas</div></div>
+    <div class="stat"><div class="n">${ignored}</div><div class="l">Sin identificar</div></div>`;
+}
+
+function renderHistory() {
+  const tbody = document.getElementById('historyBody');
+  const filtered = currentPFilter === 'all' ? historyData : historyData.filter(h => h.status === currentPFilter);
+  const sorted = [...filtered].sort((a,b) => b.timestamp - a.timestamp).slice(0, 300);
+  if (sorted.length === 0) { tbody.innerHTML=''; document.getElementById('historyEmpty').style.display='block'; return; }
+  document.getElementById('historyEmpty').style.display = 'none';
+  tbody.innerHTML = sorted.map(h => `
+    <tr>
+      <td>${fmtDate(h.timestamp)}</td><td>${esc(h.vehicle) || '—'}</td>
+      <td title="${esc(h.question)}">${esc((h.question||'').slice(0,55))}${(h.question||'').length>55?'…':''}</td>
+      <td><span class="chip chip-${h.status}">${statusLabels[h.status]||h.status}</span></td>
+      <td>${esc(h.source)||'—'}</td>
+      <td title="${esc(h.item_title)}">${esc((h.item_title||'').slice(0,28))}${(h.item_title||'').length>28?'…':''}</td>
+    </tr>`).join('');
+}
+
+function renderPending(pendingData) {
+  document.getElementById('pendingBadge').textContent = pendingData.length;
+  const container = document.getElementById('pendingList');
+  if (pendingData.length === 0) { container.innerHTML = '<div class="empty" style="background:#fff; border-radius:12px;">No hay preguntas esperando tu aprobación 🎉</div>'; return; }
+  container.innerHTML = pendingData.map(p => `
+    <div class="pending-card ${p.source==='claude'?'claude':''}">
+      <div class="vehicle">🚗 ${esc(p.vehicle)||'Sin identificar'} ${p.source==='claude'?'· 🔍 Investigado con IA':''}</div>
+      <div class="question">📩 ${esc(p.text)}</div>
+      <textarea class="answer-box" id="answer-${esc(p.id)}">${esc(p.answer)}</textarea>
+      <div class="meta">ID: ${esc(p.id)}</div>
+      <div class="pending-actions">
+        <button class="btn btn-ok" onclick="approveQuestion('${esc(p.id)}')">✅ Enviar</button>
+        <button class="btn btn-secondary" onclick="editAndSend('${esc(p.id)}')">✏️ Enviar editado</button>
+        <button class="btn btn-danger" onclick="ignoreQuestion('${esc(p.id)}')">❌ Ignorar</button>
+      </div>
+    </div>`).join('');
+}
+
+async function callBotAction(path, body) {
+  try {
+    const res = await fetch(`${BOT_URL}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json(); return data.ok;
+  } catch (e) { return false; }
+}
+async function approveQuestion(id) { const ok = await callBotAction('/approve', { question_id: id }); showToast(ok?'Respuesta enviada a ML ✓':'Error al enviar'); if (ok) refreshPreguntas(); }
+async function editAndSend(id) { const answer = document.getElementById(`answer-${id}`).value; const ok = await callBotAction('/edit', { question_id: id, answer }); showToast(ok?'Respuesta editada enviada ✓':'Error al enviar'); if (ok) refreshPreguntas(); }
+async function ignoreQuestion(id) { const ok = await callBotAction('/ignore', { question_id: id }); showToast(ok?'Pregunta ignorada':'Error'); if (ok) refreshPreguntas(); }
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#pFilters button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#pFilters button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active'); currentPFilter = btn.dataset.f; renderHistory();
+    });
+  });
+});
+
+async function refreshPreguntas() {
+  try {
+    const [hRes, pRes] = await Promise.all([fetch(`${BOT_URL}/history`), fetch(`${BOT_URL}/pending`)]);
+    historyData = await hRes.json(); const pendingData = await pRes.json();
+    renderPStats(); renderHistory(); renderPending(pendingData);
+  } catch (e) { console.error('Error cargando preguntas', e); }
+}
+
+/* ========== INIT ========== */
+(async function init() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) { await onAuthed(); }
+})();
+</script>
+</body>
+</html>
