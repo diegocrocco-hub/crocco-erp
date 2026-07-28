@@ -260,10 +260,6 @@ tbody tr:hover { background: #fafbfc; }
           <input type="file" id="uploadML" accept=".xlsx,.xls,.csv" onchange="handleRestockUpload(event, 'mercado_libre', 'completo')">
           <label class="btn btn-secondary" for="uploadAmazonCompleto" style="cursor:pointer;">⬆️ Amazon (ventas + stock)</label>
           <input type="file" id="uploadAmazonCompleto" accept=".xlsx,.xls,.csv" onchange="handleRestockUpload(event, 'amazon', 'completo')">
-          <label class="btn btn-secondary" for="uploadAmazonStock" style="cursor:pointer;">⬆️ Amazon — solo Stock</label>
-          <input type="file" id="uploadAmazonStock" accept=".xlsx,.xls,.csv" onchange="handleRestockUpload(event, 'amazon', 'stock')">
-          <label class="btn btn-secondary" for="uploadAmazonVentas" style="cursor:pointer;">⬆️ Amazon — solo Ventas</label>
-          <input type="file" id="uploadAmazonVentas" accept=".xlsx,.xls,.csv" onchange="handleRestockUpload(event, 'amazon', 'ventas')">
         </div>
       </div>
       <div class="stats" id="restockStats"></div>
@@ -272,8 +268,7 @@ tbody tr:hover { background: #fafbfc; }
         <button class="btn btn-secondary" onclick="exportRestockPlan()">⬇️ Descargar plan de compra (Excel)</button>
         <button class="btn btn-secondary" onclick="exportMLShipmentTemplate()">⬇️ Plantilla de envío ML</button>
         <button class="btn btn-secondary" onclick="exportAmazonShipmentTemplate()">⬇️ Plantilla de envío Amazon</button>
-        <button class="btn btn-secondary" onclick="exportBrandOrderPDF('EVOLUM')">📄 PDF pedido EVOLUM</button>
-        <button class="btn btn-secondary" onclick="exportBrandOrderPDF('ILLUME')">📄 PDF pedido ILLUME</button>
+        <button class="btn btn-secondary" onclick="exportBrandOrderPDFs()">📄 Generar pedidos PDF (EVOLUM / ILLUME)</button>
       </div>
       <div class="table-shell">
         <table>
@@ -612,7 +607,7 @@ let allRows = [], filteredRows = [], selected = new Set(), brands = [], currentB
 async function loadInventoryData() {
   const { data: cat, error: e1 } = await sb.from('catalog').select('sku, marca, producto, variante, costo_sin_iva, costo_con_iva, precio_venta').order('marca').order('sku');
   const { data: inv, error: e2 } = await sb.from('inventory').select('sku, qty');
-  const { data: mar, error: e3 } = await sb.from('marcas').select('nombre, prefijo').order('nombre');
+  const { data: mar, error: e3 } = await sb.from('marcas').select('nombre, prefijo, tipo').order('nombre');
   if (e1 || e2 || e3) { showToast('Error cargando inventario'); return; }
 
   const invMap = {}; (inv || []).forEach(i => invMap[i.sku] = i.qty);
@@ -1028,10 +1023,19 @@ async function processMLResumenSheet(wb) {
   const IDX_SKU = 3, IDX_VENTAS = 11, IDX_STOCK = 23; // Columnas D, L, X
   const aoa = XLSX.utils.sheet_to_json(wb.Sheets['Resumen'], { header: 1, defval: '' });
 
+  const cleanCell = (v) => String(v ?? '').replace(/\u00a0/g, ' ').trim().toUpperCase();
+
   // Buscar la fila de encabezado (donde la columna D dice "SKU") para saber dónde empiezan los datos
   let dataStart = -1;
-  for (let i = 0; i < Math.min(aoa.length, 15); i++) {
-    if (String(aoa[i]?.[IDX_SKU] || '').trim().toUpperCase() === 'SKU') { dataStart = i + 1; break; }
+  for (let i = 0; i < Math.min(aoa.length, 30); i++) {
+    if (cleanCell(aoa[i]?.[IDX_SKU]) === 'SKU') { dataStart = i + 1; break; }
+  }
+  if (dataStart === -1) {
+    // Respaldo: buscar "SKU" en cualquier columna de las primeras filas, por si el archivo vino con columnas corridas
+    for (let i = 0; i < Math.min(aoa.length, 30); i++) {
+      const row = aoa[i] || [];
+      if (row.some(c => cleanCell(c) === 'SKU')) { dataStart = i + 1; break; }
+    }
   }
   if (dataStart === -1) { showToast('No encontré la fila de encabezado (columna D = "SKU") en la hoja Resumen'); return; }
 
@@ -1128,10 +1132,12 @@ function ceilDiv(a, b) { return b > 0 ? Math.ceil(a / b) : a; }
 
 function getRestockComputed() {
   const STOCK_MINIMO = 2;
+  const marcasLocales = new Set(brands.filter(b => b.tipo === 'local').map(b => b.nombre));
   const skus = new Set([...Object.keys(restockRowsML), ...Object.keys(restockRowsAmazon)]);
   const rows = [];
   skus.forEach(sku => {
     const cat = allRows.find(r => r.sku === sku);
+    if (!cat || !marcasLocales.has(cat.marca)) return; // Este proceso es solo para marcas de distribución local
     const ml = restockRowsML[sku];
     const amz = restockRowsAmazon[sku];
     const faltanteML = ml ? Math.max(0, Math.max(ml.ventas_30d, STOCK_MINIMO) - ml.stock_actual) : 0;
@@ -1214,35 +1220,58 @@ function exportAmazonShipmentTemplate() {
   showToast('Plantilla de envío Amazon descargada ✓');
 }
 
-function exportBrandOrderPDF(marca) {
-  const rows = getRestockComputed().filter(r => r.marca === marca && r.paquetes > 0);
-  if (!rows.length) { showToast(`No hay nada pendiente de pedir a ${marca}`); return; }
+function exportBrandOrderPDFs() {
+  const rows = getRestockComputed();
+  const fechaArchivo = new Date().toISOString().slice(0,10);
+  const fechaTexto = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+  const marcasPedido = ['EVOLUM', 'ILLUME'];
+  const plataformas = [
+    { key: 'ml', label: 'Mercado Libre', sufijo: '1' },
+    { key: 'amazon', label: 'Amazon', sufijo: '2' }
+  ];
 
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  const fecha = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+  let generados = 0;
 
-  doc.setFontSize(16);
-  doc.text(`Pedido de restock — ${marca}`, 14, 18);
-  doc.setFontSize(10);
-  doc.setTextColor(100);
-  doc.text(`Crocco Brands · ${fecha}`, 14, 25);
+  marcasPedido.forEach(marca => {
+    plataformas.forEach(plat => {
+      const filas = rows
+        .filter(r => r.marca === marca)
+        .map(r => {
+          const faltante = plat.key === 'ml' ? r.faltanteML : r.faltanteAmz;
+          if (faltante <= 0) return null;
+          const paquetes = ceilDiv(faltante, r.packSize);
+          const unidades = paquetes * r.packSize;
+          return [r.sku, r.producto, paquetes, unidades];
+        })
+        .filter(Boolean);
 
-  const body = rows.map(r => [r.sku, r.producto, r.paquetes, r.unidadesAEnviar]);
-  const totalUnidades = rows.reduce((s, r) => s + r.unidadesAEnviar, 0);
+      if (!filas.length) return; // No se necesita este pedido, no se genera archivo
 
-  doc.autoTable({
-    startY: 32,
-    head: [['SKU', 'Producto', 'Paquetes a enviar', 'Unidades totales']],
-    body,
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [29, 29, 31] },
-    foot: [['', 'TOTAL', '', totalUnidades]],
-    footStyles: { fillColor: [245, 245, 247], textColor: [29, 29, 31], fontStyle: 'bold' }
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text(`Pedido de restock — ${marca} (${plat.label})`, 14, 18);
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Crocco Brands · ${fechaTexto}`, 14, 25);
+
+      const totalUnidades = filas.reduce((s, f) => s + f[3], 0);
+      doc.autoTable({
+        startY: 32,
+        head: [['SKU', 'Producto', 'Paquetes a enviar', 'Unidades totales']],
+        body: filas,
+        styles: { fontSize: 9, cellPadding: 3 },
+        headStyles: { fillColor: [29, 29, 31] },
+        foot: [['', 'TOTAL', '', totalUnidades]],
+        footStyles: { fillColor: [245, 245, 247], textColor: [29, 29, 31], fontStyle: 'bold' }
+      });
+
+      doc.save(`${marca}_CGOQ_${fechaArchivo}_${plat.sufijo}.pdf`);
+      generados++;
+    });
   });
 
-  doc.save(`pedido_${marca.toLowerCase()}_${new Date().toISOString().slice(0,10)}.pdf`);
-  showToast(`PDF de pedido para ${marca} descargado ✓`);
+  showToast(generados > 0 ? `${generados} pedido(s) generado(s) ✓` : 'No hay nada pendiente de pedir a EVOLUM ni ILLUME');
 }
 
 function exportMLShipmentTemplate() {
