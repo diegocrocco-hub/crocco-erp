@@ -143,7 +143,7 @@ tbody tr:hover { background: #fafbfc; }
     <h1>Crocco Brands</h1>
     <div class="tagline" id="screenTagline">Back office interno</div>
     <div class="login-error" id="loginError"></div>
-    <input type="email" id="loginEmail" placeholder="Correo">
+    <input type="email" id="loginEmail" placeholder="Correo" onkeydown="if(event.key==='Enter'){event.preventDefault(); handleLogin();}">
     <input type="password" id="loginPassword" placeholder="Contraseña" onkeydown="if(event.key==='Enter'){event.preventDefault(); handleLogin();}">
     <div class="login-hint" id="pwHint" style="display:none;">Mínimo 8 caracteres, 1 número y 1 símbolo.</div>
     <button id="loginBtn" onclick="handleLogin()">Iniciar sesión</button>
