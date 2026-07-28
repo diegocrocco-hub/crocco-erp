@@ -230,7 +230,7 @@ tbody tr:hover { background: #fafbfc; }
         </div>
         <div class="table-shell">
           <table>
-            <thead><tr><th>Fecha</th><th>Vehículo</th><th>Pregunta</th><th>Estado</th><th>Fuente</th><th></th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Vehículo</th><th>Publicación</th><th>Pregunta</th><th>Estado</th><th>Fuente</th><th></th></tr></thead>
             <tbody id="historyBody"></tbody>
           </table>
           <div class="empty" id="historyEmpty" style="display:none;">Sin registros aún.</div>
@@ -354,6 +354,7 @@ tbody tr:hover { background: #fafbfc; }
 <div class="modal-overlay" id="viewAnswerModal">
   <div class="modal">
     <h3>Pregunta y respuesta</h3>
+    <p style="margin-bottom:6px;"><b>Publicación:</b> <span id="vaItemTitle"></span></p>
     <p style="margin-bottom:6px;"><b>Vehículo:</b> <span id="vaVehicle"></span></p>
     <p style="margin-bottom:6px;"><b>Pregunta:</b> <span id="vaQuestion"></span></p>
     <label class="field-label">Respuesta enviada</label>
@@ -383,7 +384,9 @@ tbody tr:hover { background: #fafbfc; }
 const SUPABASE_URL = 'https://jpscjdumeuabnmwrsvki.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impwc2NqZHVtZXVhYm5td3JzdmtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzODY3OTcsImV4cCI6MjA4OTk2Mjc5N30.TNv1twrLXX-GNBvFzwOLq9F6wmZo0X0KQhkyoC74VJg';
 const BOT_URL = 'https://worker-production-4fe8.up.railway.app';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
 
 let currentProfile = null;
 let isInviteFlow = false;
@@ -773,6 +776,7 @@ function renderHistory() {
   tbody.innerHTML = sorted.map((h, idx) => `
     <tr>
       <td>${fmtDate(h.timestamp)}</td><td>${esc(h.vehicle) || '—'}</td>
+      <td title="${esc(h.item_title)}">${esc((h.item_title||'').slice(0,30))}${(h.item_title||'').length>30?'…':''}</td>
       <td title="${esc(h.question)}">${esc((h.question||'').slice(0,45))}${(h.question||'').length>45?'…':''}</td>
       <td><span class="chip chip-${h.status}">${statusLabels[h.status]||h.status}</span></td>
       <td>${esc(h.source)||'—'}</td>
@@ -787,6 +791,7 @@ function viewAnswer(idx, filterUsed) {
   const h = sorted[idx];
   if (!h) return;
   lastSortedHistory = h;
+  document.getElementById('vaItemTitle').textContent = h.item_title || 'Sin publicación';
   document.getElementById('vaVehicle').textContent = h.vehicle || 'Sin identificar';
   document.getElementById('vaQuestion').textContent = h.question || '';
   document.getElementById('vaAnswer').value = h.answer || '(sin respuesta registrada)';
@@ -819,8 +824,14 @@ function renderPending(pendingData) {
   if (pendingData.length === 0) { container.innerHTML = '<div class="empty">No hay preguntas esperando tu aprobación 🎉</div>'; return; }
   container.innerHTML = pendingData.map(p => `
     <div class="pending-card ${p.source==='claude'?'claude':''}">
-      <div class="vehicle">🚗 ${esc(p.vehicle)||'Sin identificar'} ${p.source==='claude'?'· 🔍 Investigado con IA':''}</div>
-      <div class="question">📩 ${esc(p.text)}</div>
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        ${p.item_thumbnail ? `<img src="${esc(p.item_thumbnail)}" alt="" style="width:56px; height:56px; object-fit:contain; border-radius:8px; border:1px solid var(--line); flex-shrink:0; background:#fff;">` : ''}
+        <div style="flex:1; min-width:0;">
+          <div class="vehicle">🚗 ${esc(p.vehicle)||'Sin identificar'} ${p.source==='claude'?'· 🔍 Investigado con IA':''}</div>
+          <div style="font-size:0.78rem; color:var(--sub); margin-bottom:4px;">🛍️ ${esc(p.item_title) || 'Sin publicación'}</div>
+          <div class="question">📩 ${esc(p.text)}</div>
+        </div>
+      </div>
       <textarea class="answer-box" id="answer-${esc(p.id)}">${esc(p.answer)}</textarea>
       <div class="meta">ID: ${esc(p.id)}</div>
       <div class="pending-actions">
