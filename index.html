@@ -215,6 +215,15 @@ tbody tr:hover { background: #fafbfc; }
       <div class="top"><div><h1>🔦 Preguntas ML</h1><div class="sub"><span class="live-dot"></span>Se actualiza cada 15 segundos</div></div></div>
       <div class="stats" id="pStats"></div>
       <div class="section">
+        <h2>📊 Publicaciones con más preguntas</h2>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>Publicación</th><th>Preguntas recibidas</th></tr></thead>
+            <tbody id="topItemsBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="section">
         <h2>Pendientes de aprobación <span class="badge-count" id="pendingBadge">0</span></h2>
         <div id="pendingList"></div>
       </div>
@@ -755,16 +764,35 @@ let historyData = [], currentPFilter = 'all';
 const statusLabels = { auto: 'Auto-respondida', approved: 'Aprobada', pending: 'Pendiente', auto_ask: 'Se pidió dato', ignored: 'Sin identificar', sin_stock: 'Sin stock (pausada)' };
 function fmtDate(ts) { return new Date(ts).toLocaleString('es-MX', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }); }
 
+function renderTopItems() {
+  const counts = {};
+  historyData.forEach(h => {
+    const title = h.item_title || 'Sin publicación';
+    if (title === 'Sin publicación') return;
+    counts[title] = (counts[title] || 0) + 1;
+  });
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 15);
+  const tbody = document.getElementById('topItemsBody');
+  if (sorted.length === 0) { tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:var(--sub);">Aún no hay suficientes datos.</td></tr>'; return; }
+  tbody.innerHTML = sorted.map(([title, count]) => `<tr><td>${esc(title)}</td><td><b>${count}</b></td></tr>`).join('');
+}
+
 function renderPStats() {
   const total = historyData.length;
   const auto = historyData.filter(h => h.status === 'auto').length;
   const approved = historyData.filter(h => h.status === 'approved').length;
   const ignored = historyData.filter(h => h.status === 'ignored').length;
   document.getElementById('pStats').innerHTML = `
-    <div class="stat"><div class="n">${total}</div><div class="l">Total</div></div>
-    <div class="stat"><div class="n">${auto}</div><div class="l">Auto</div></div>
-    <div class="stat"><div class="n">${approved}</div><div class="l">Aprobadas</div></div>
-    <div class="stat"><div class="n">${ignored}</div><div class="l">Sin identificar</div></div>`;
+    <div class="stat" style="cursor:pointer;" onclick="setPFilter('all')"><div class="n">${total}</div><div class="l">Total</div></div>
+    <div class="stat" style="cursor:pointer;" onclick="setPFilter('auto')"><div class="n">${auto}</div><div class="l">Auto</div></div>
+    <div class="stat" style="cursor:pointer;" onclick="setPFilter('approved')"><div class="n">${approved}</div><div class="l">Aprobadas</div></div>
+    <div class="stat" style="cursor:pointer;" onclick="setPFilter('ignored')"><div class="n">${ignored}</div><div class="l">Sin identificar</div></div>`;
+}
+
+function setPFilter(f) {
+  currentPFilter = f;
+  document.querySelectorAll('#pFilters button').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+  renderHistory();
 }
 
 function renderHistory() {
@@ -865,7 +893,7 @@ async function refreshPreguntas() {
   try {
     const [hRes, pRes] = await Promise.all([fetch(`${BOT_URL}/history`), fetch(`${BOT_URL}/pending`)]);
     historyData = await hRes.json(); const pendingData = await pRes.json();
-    renderPStats(); renderHistory(); renderPending(pendingData);
+    renderPStats(); renderTopItems(); renderHistory(); renderPending(pendingData);
   } catch (e) { console.error('Error cargando preguntas', e); }
 }
 
