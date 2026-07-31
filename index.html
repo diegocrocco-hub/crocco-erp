@@ -1024,7 +1024,9 @@ function handleRestockUpload(event, platform, tipo) {
   reader.onload = (e) => {
     const wb = XLSX.read(e.target.result, { type: 'array' });
 
-    // Formato específico del "Reporte general de stock" de Mercado Libre: hoja "Resumen", columnas D (SKU), L (ventas), X (stock)
+    // Formato específico del "Reporte general de stock" de Mercado Libre: hoja "Resumen".
+    // Las columnas se detectan dinámicamente por el texto del encabezado (no por posición fija),
+    // porque el archivo de ML a veces trae mal declarado su rango de datos y/o recorre columnas.
     if (platform === 'mercado_libre' && wb.SheetNames.includes('Resumen')) {
       processMLResumenSheet(wb);
       return;
@@ -1040,33 +1042,72 @@ function handleRestockUpload(event, platform, tipo) {
   event.target.value = '';
 }
 
-async function processMLResumenSheet(wb) {
-  const IDX_SKU = 3, IDX_VENTAS = 11, IDX_STOCK = 23; // Columnas D, L, X
-  const aoa = XLSX.utils.sheet_to_json(wb.Sheets['Resumen'], { header: 1, defval: '' });
+function getUsedRange(ws) {
+  // El !ref que trae el archivo de Mercado Libre a veces está mal declarado (recorta
+  // filas/columnas reales de encabezado). Reconstruimos el rango real leyendo las celdas
+  // directamente en vez de confiar en esa metadata.
+  let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+  Object.keys(ws).forEach(addr => {
+    if (addr[0] === '!') return;
+    const cell = XLSX.utils.decode_cell(addr);
+    if (cell.r < minR) minR = cell.r;
+    if (cell.r > maxR) maxR = cell.r;
+    if (cell.c < minC) minC = cell.c;
+    if (cell.c > maxC) maxC = cell.c;
+  });
+  if (minR === Infinity) return null;
+  return { s: { r: minR, c: minC }, e: { r: maxR, c: maxC } };
+}
 
+async function processMLResumenSheet(wb) {
+  const ws = wb.Sheets['Resumen'];
+  const trueRange = getUsedRange(ws);
+  if (trueRange) ws['!ref'] = XLSX.utils.encode_range(trueRange);
+  const baseCol = trueRange ? trueRange.s.c : 0;
+
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   const cleanCell = (v) => String(v ?? '').replace(/\u00a0/g, ' ').trim().toUpperCase();
 
-  // Buscar la fila de encabezado (donde la columna D dice "SKU") para saber dónde empiezan los datos
-  let dataStart = -1;
-  for (let i = 0; i < Math.min(aoa.length, 30); i++) {
-    if (cleanCell(aoa[i]?.[IDX_SKU]) === 'SKU') { dataStart = i + 1; break; }
+  // Buscar dinámicamente la fila de encabezado y las columnas SKU / Ventas / Stock por su
+  // texto (no por posición fija), porque Mercado Libre puede recorrer las columnas entre reportes.
+  let headerRow = -1, colSku = -1, colVentas = -1, colStock = -1;
+  for (let i = 0; i < Math.min(aoa.length, 40); i++) {
+    const row = aoa[i] || [];
+    const idxSku = row.findIndex(c => cleanCell(c) === 'SKU');
+    if (idxSku === -1) continue;
+    const idxVentas = row.findIndex(c => cleanCell(c).includes('VENTAS') && cleanCell(c).includes('30'));
+    const idxStock = row.findIndex(c => cleanCell(c).includes('STOCK') && cleanCell(c).includes('30'));
+    headerRow = i; colSku = idxSku;
+    colVentas = idxVentas !== -1 ? idxVentas : row.findIndex(c => cleanCell(c).includes('VENTAS'));
+    colStock = idxStock !== -1 ? idxStock : row.findIndex(c => cleanCell(c).includes('STOCK'));
+    break;
   }
-  if (dataStart === -1) {
-    // Respaldo: buscar "SKU" en cualquier columna de las primeras filas, por si el archivo vino con columnas corridas
-    for (let i = 0; i < Math.min(aoa.length, 30); i++) {
-      const row = aoa[i] || [];
-      if (row.some(c => cleanCell(c) === 'SKU')) { dataStart = i + 1; break; }
-    }
+
+  if (headerRow === -1 || colSku === -1 || colVentas === -1 || colStock === -1) {
+    // Respaldo: no se detectaron los encabezados automáticamente. En vez de trabarnos,
+    // abrimos el modal de mapeo manual (como ya hace Amazon) mostrando las columnas reales
+    // del Excel para que se asignen a mano.
+    showToast('No detecté automáticamente las columnas de Mercado Libre esta vez — confírmalas manualmente.');
+    const pseudoHeaders = [];
+    for (let c = 0; c <= trueRange.e.c - baseCol; c++) pseudoHeaders.push('Columna ' + XLSX.utils.encode_col(baseCol + c));
+    const rowsObj = aoa.map(r => {
+      const o = {};
+      pseudoHeaders.forEach((h, idx) => o[h] = r[idx] ?? '');
+      return o;
+    });
+    pendingRestockUpload = { platform: 'mercado_libre', tipo: 'completo', rows: rowsObj, headers: pseudoHeaders };
+    openRestockMapModal('mercado_libre', 'completo', pseudoHeaders);
+    setUploadStatus('mercado_libre', 'gray');
+    return;
   }
-  if (dataStart === -1) { showToast('No encontré la fila de encabezado (columna D = "SKU") en la hoja Resumen'); setUploadStatus('mercado_libre', 'gray'); return; }
 
   const combined = {};
-  for (let r = dataStart; r < aoa.length; r++) {
+  for (let r = headerRow + 1; r < aoa.length; r++) {
     const row = aoa[r];
-    const sku = String(row?.[IDX_SKU] || '').trim();
+    const sku = String(row?.[colSku] || '').trim();
     if (!sku) continue;
-    const ventas = parseFloat(row[IDX_VENTAS]) || 0;
-    const stock = parseFloat(row[IDX_STOCK]) || 0;
+    const ventas = parseFloat(row[colVentas]) || 0;
+    const stock = parseFloat(row[colStock]) || 0;
     if (!combined[sku]) combined[sku] = { ventas: 0, stock: 0 };
     combined[sku].ventas += ventas;
     combined[sku].stock += stock;
