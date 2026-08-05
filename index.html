@@ -286,7 +286,7 @@ tbody tr:hover { background: #fafbfc; }
         <table>
           <thead>
             <tr>
-              <th>SKU</th><th>Producto</th>
+              <th>SKU</th><th>Producto</th><th>Variante</th>
               <th>Ventas 30d ML</th><th>Stock ML</th>
               <th>Ventas 30d Amazon</th><th>Stock Amazon</th>
               <th>Faltante total</th>
@@ -1232,7 +1232,7 @@ function renderRestockTable() {
 
   const q = (document.getElementById('restockSearch')?.value || '').trim().toLowerCase();
   let rows = getRestockComputed();
-  if (q) rows = rows.filter(r => (r.sku + ' ' + r.producto).toLowerCase().includes(q));
+  if (q) rows = rows.filter(r => (r.sku + ' ' + r.producto + ' ' + (r.variante || '')).toLowerCase().includes(q));
 
   const totalPedir = rows.reduce((s, r) => s + r.faltanteTotal, 0);
   const skusAPedir = rows.filter(r => r.faltanteTotal > 0).length;
@@ -1245,6 +1245,7 @@ function renderRestockTable() {
     <tr style="${r.faltanteTotal > 0 ? '' : 'opacity:0.55;'}">
       <td><code>${esc(r.sku)}</code></td>
       <td>${esc(r.producto)}</td>
+      <td>${esc(r.variante) || '—'}</td>
       <td>${r.ventasML ?? '—'}</td><td>${r.stockML ?? '—'}</td>
       <td>${r.ventasAmz ?? '—'}</td><td>${r.stockAmz ?? '—'}</td>
       <td><b>${r.faltanteTotal}</b></td>
@@ -1478,7 +1479,7 @@ function exportRestockPlan() {
   const rows = getRestockComputed().filter(r => r.faltanteTotal > 0);
   if (!rows.length) { showToast('No hay nada pendiente de pedir'); return; }
   const data = rows.map(r => ({
-    SKU: r.sku, Producto: r.producto, Marca: r.marca,
+    SKU: r.sku, Producto: r.producto, Variante: r.variante || '', Marca: r.marca,
     'Ventas 30d ML': r.ventasML, 'Stock ML': r.stockML,
     'Ventas 30d Amazon': r.ventasAmz, 'Stock Amazon': r.stockAmz,
     'Faltante total': r.faltanteTotal, 'Unid. por paquete': r.packSize,
